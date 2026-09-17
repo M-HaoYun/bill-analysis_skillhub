@@ -1,5 +1,3 @@
-下载地址：https://skillhub.cn/skills/user_e285fd2e/bill-analysis
-
 ---
 name: bill-analysis
 description: 记账截图识别与收支分析工作流。当用户提供手机记账 App（如鲨鱼记账等）的长截图、希望把截图里的收支记录识别成结构化数据、生成 CSV、生成可交互的收支分析 HTML 工作台，或对已有 CSV/交易数据做分类与月度收支分析时使用。也可基于收支数据做家庭财务规划测算（资产配比、公积金/房贷还贷策略、提前还本对比、降薪情景现金流压测）。本技能的核心工作流是：切分长截图 → 逐段原尺寸识别 → 归类 → 生成 CSV → 生成 HTML 分析面板，财务规划测算为扩展能力（scripts/planning_calculator.py + references/financial_planning.md）。本技能同时提供**通用的滚动长截图切分工具**（scripts/split_screenshots.py，任何 App 的长截图切分、按 2700px 切片、无损/近无损编码，其他工作区应直接调用它而不是另写实现）。
