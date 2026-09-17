@@ -1,0 +1,1505 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>记账分析工作台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .stat-card { transition: transform 0.2s, box-shadow 0.2s; }
+    .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+    .positive { color: #dc2626; }      /* 中国惯例：涨红 */
+    .negative { color: #16a34a; }      /* 中国惯例：跌绿 */
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+    .badge-income { background: #fee2e2; color: #dc2626; }
+    .badge-expense { background: #dcfce7; color: #16a34a; }
+    .filter-btn.active { background: #2563eb; color: white; }
+    .tab.active { border-bottom: 2px solid #2563eb; color: #2563eb; font-weight: 600; }
+    table tbody tr:hover { background: #f9fafb; }
+  </style>
+</head>
+<body class="bg-slate-50">
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-10">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+      <div>
+        <h1 class="text-2xl font-bold text-slate-800">💰 记账分析工作台</h1>
+        <p class="text-sm text-slate-500 mt-1" id="header-subtitle">记账数据可视化</p>
+      </div>
+      <div class="flex gap-2 flex-wrap justify-end">
+        <button id="btn-import" class="px-3 py-2 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg">📥 导入CSV</button>
+        <button id="btn-export" class="px-3 py-2 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg">📤 导出CSV</button>
+        <button id="btn-backup" class="px-3 py-2 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg">💾 备份</button>
+        <button id="btn-restore" class="px-3 py-2 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg">🔄 恢复</button>
+        <button id="btn-add" class="px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg">➕ 新增交易</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-6 py-6 space-y-6">
+
+    <!-- 今天要处理 (铁律5: 置顶) -->
+    <section id="today-section" class="bg-white rounded-xl p-5 shadow-sm border-l-4 border-blue-500">
+      <h3 class="text-base font-semibold text-slate-700 mb-3">📌 本月要处理</h3>
+      <div id="today-list" class="space-y-2"></div>
+    </section>
+
+    <!-- 概览卡片 -->
+    <section class="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div class="stat-card bg-white rounded-xl p-5 shadow-sm">
+        <div class="text-sm text-slate-500">真实总收入 <span class="text-xs text-slate-400">(不含理财)</span></div>
+        <div class="text-2xl font-bold positive mt-1" id="total-income">¥0</div>
+        <div class="text-xs text-slate-400 mt-1" id="income-detail"></div>
+      </div>
+      <div class="stat-card bg-white rounded-xl p-5 shadow-sm">
+        <div class="text-sm text-slate-500">真实总支出 <span class="text-xs text-slate-400">(不含理财)</span></div>
+        <div class="text-2xl font-bold negative mt-1" id="total-expense">¥0</div>
+        <div class="text-xs text-slate-400 mt-1" id="expense-detail"></div>
+      </div>
+      <div class="stat-card bg-white rounded-xl p-5 shadow-sm">
+        <div class="text-sm text-slate-500">真实净结余</div>
+        <div class="text-2xl font-bold mt-1" id="net-balance">¥0</div>
+        <div class="text-xs text-slate-400 mt-1" id="balance-detail"></div>
+      </div>
+      <div class="stat-card bg-white rounded-xl p-5 shadow-sm">
+        <div class="text-sm text-slate-500">储蓄率</div>
+        <div class="text-2xl font-bold mt-1" id="savings-rate">0%</div>
+        <div class="text-xs text-slate-400 mt-1" id="rate-detail"></div>
+      </div>
+    </section>
+    <div id="insight-overview" class="bg-amber-50 border-l-4 border-amber-400 rounded-r-lg px-4 py-3 text-sm text-amber-900 leading-relaxed"></div>
+
+    <!-- 年月筛选 -->
+    <section class="bg-white rounded-xl p-4 shadow-sm">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-sm text-slate-600 mr-2">年份筛选:</span>
+        <button class="year-btn filter-btn px-3 py-1 text-sm rounded-md active" data-year="all">全部年份</button>
+        <button class="year-btn filter-btn px-3 py-1 text-sm rounded-md" data-year="2026">2026年</button>
+        <div class="w-full sm:w-px"></div>
+        <span class="text-sm text-slate-600 mr-2">月份筛选:</span>
+        <button class="month-btn filter-btn px-3 py-1 text-sm rounded-md active" data-month="all">全部月份</button>
+        <button class="month-btn filter-btn px-3 py-1 text-sm rounded-md" data-month="202601">1月</button>
+        <button class="month-btn filter-btn px-3 py-1 text-sm rounded-md" data-month="202602">2月</button>
+        <button class="month-btn filter-btn px-3 py-1 text-sm rounded-md" data-month="202603">3月</button>
+        <button class="month-btn filter-btn px-3 py-1 text-sm rounded-md" data-month="202604">4月</button>
+        <button class="month-btn filter-btn px-3 py-1 text-sm rounded-md" data-month="202605">5月</button>
+        <button class="month-btn filter-btn px-3 py-1 text-sm rounded-md" data-month="202606">6月</button>
+        <button class="month-btn filter-btn px-3 py-1 text-sm rounded-md" data-month="202607">7月</button>
+        <button class="month-btn filter-btn px-3 py-1 text-sm rounded-md" data-month="202608">8月</button>
+        <div class="flex-1"></div>
+        <span class="text-sm text-slate-600 mr-2">类型:</span>
+        <button class="type-btn filter-btn px-3 py-1 text-sm rounded-md active" data-type="all">全部</button>
+        <button class="type-btn filter-btn px-3 py-1 text-sm rounded-md" data-type="收入">收入</button>
+        <button class="type-btn filter-btn px-3 py-1 text-sm rounded-md" data-type="支出">支出</button>
+      </div>
+    </section>
+
+    <!-- 趋势图 + 分类饼图 -->
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="bg-white rounded-xl p-5 shadow-sm">
+        <h3 class="text-base font-semibold text-slate-700 mb-3">月度收支趋势</h3>
+        <div class="h-72"><canvas id="trendChart"></canvas></div>
+        <p id="insight-trend" class="mt-3 text-xs text-slate-500 leading-relaxed bg-slate-50 rounded-lg p-3"></p>
+      </div>
+      <div class="bg-white rounded-xl p-5 shadow-sm">
+        <h3 class="text-base font-semibold text-slate-700 mb-3">支出分类占比</h3>
+        <div class="h-72"><canvas id="categoryChart"></canvas></div>
+        <p id="insight-category" class="mt-3 text-xs text-slate-500 leading-relaxed bg-slate-50 rounded-lg p-3"></p>
+      </div>
+    </section>
+
+    <!-- 分类统计 + 收入构成 -->
+    <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div class="bg-white rounded-xl p-5 shadow-sm">
+        <h3 class="text-base font-semibold text-slate-700 mb-3">支出分类排行 (Top 10)</h3>
+        <div id="expense-ranking" class="space-y-2"></div>
+        <p id="insight-ranking-exp" class="mt-3 text-xs text-slate-500 leading-relaxed bg-slate-50 rounded-lg p-3"></p>
+      </div>
+      <div class="bg-white rounded-xl p-5 shadow-sm">
+        <h3 class="text-base font-semibold text-slate-700 mb-3">收入构成</h3>
+        <div id="income-ranking" class="space-y-2"></div>
+        <p id="insight-ranking-inc" class="mt-3 text-xs text-slate-500 leading-relaxed bg-slate-50 rounded-lg p-3"></p>
+      </div>
+    </section>
+
+    <!-- 账户总览 -->
+    <section class="bg-white rounded-xl p-5 shadow-sm">
+      <h3 class="text-base font-semibold text-slate-700 mb-3">🏦 账户总览 (2026-08-21)</h3>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <h4 class="text-sm font-semibold text-slate-600 mb-2">资金账户</h4>
+          <table class="w-full text-sm">
+            <tbody id="account-table"></tbody>
+          </table>
+          <div class="mt-3 pt-3 border-t border-slate-200 text-sm flex justify-between font-semibold">
+            <span>合计流动资金</span>
+            <span class="text-blue-600" id="liquid-total">¥0</span>
+          </div>
+        </div>
+        <div>
+          <h4 class="text-sm font-semibold text-slate-600 mb-2">五险一金 & 住房贷款</h4>
+          <table class="w-full text-sm">
+            <tbody id="insurance-table"></tbody>
+          </table>
+          <div class="mt-3 text-xs text-slate-500 leading-relaxed" id="loan-detail"></div>
+        </div>
+      </div>
+      <p id="insight-account" class="mt-3 text-xs text-slate-500 leading-relaxed bg-slate-50 rounded-lg p-3"></p>
+    </section>
+
+    <!-- 深度分析：月度环比 -->
+    <section class="bg-white rounded-xl p-5 shadow-sm">
+      <h3 class="text-base font-semibold text-slate-700 mb-3">📈 月度收支变化（环比）</h3>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+        <div class="bg-slate-50 rounded-lg p-3">
+          <div class="text-xs text-slate-500" id="chg-inc-67-title">前2月 → 前1月 收入</div>
+          <div class="text-lg font-bold mt-1" id="chg-inc-67">-</div>
+        </div>
+        <div class="bg-slate-50 rounded-lg p-3">
+          <div class="text-xs text-slate-500" id="chg-exp-67-title">前2月 → 前1月 支出</div>
+          <div class="text-lg font-bold mt-1" id="chg-exp-67">-</div>
+        </div>
+        <div class="bg-slate-50 rounded-lg p-3">
+          <div class="text-xs text-slate-500" id="chg-inc-78-title">前1月 → 最近月 收入</div>
+          <div class="text-lg font-bold mt-1" id="chg-inc-78">-</div>
+        </div>
+        <div class="bg-slate-50 rounded-lg p-3">
+          <div class="text-xs text-slate-500" id="chg-exp-78-title">前1月 → 最近月 支出</div>
+          <div class="text-lg font-bold mt-1" id="chg-exp-78">-</div>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div>
+          <div class="h-64"><canvas id="catTrendChart"></canvas></div>
+          <p id="insight-cattrend" class="mt-2 text-xs text-slate-500 leading-relaxed bg-slate-50 rounded-lg p-3"></p>
+        </div>
+        <div>
+          <div class="h-64"><canvas id="incomeMixChart"></canvas></div>
+          <p id="insight-incomemix" class="mt-2 text-xs text-slate-500 leading-relaxed bg-slate-50 rounded-lg p-3"></p>
+        </div>
+      </div>
+      <p class="text-xs text-slate-400 mt-2">左：主要支出分类月度趋势（堆叠） · 右：收入结构（工资/出差/红包，理财只显示净差额折线）。最近月数据若不完整，环比卡片已用日均口径消除天数差异。</p>
+    </section>
+
+    <!-- 深度分析：排行与习惯 -->
+    <section class="bg-white rounded-xl p-5 shadow-sm">
+      <h3 class="text-base font-semibold text-slate-700 mb-3">🔍 消费洞察</h3>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div>
+          <h4 class="text-sm font-semibold text-slate-600 mb-2">单笔支出 Top 10</h4>
+          <div id="top-expenses" class="space-y-1 text-sm"></div>
+        </div>
+        <div>
+          <h4 class="text-sm font-semibold text-slate-600 mb-2">高频消费 Top 10</h4>
+          <div id="freq-spends" class="space-y-1 text-sm"></div>
+        </div>
+        <div>
+          <h4 class="text-sm font-semibold text-slate-600 mb-2">工作日 vs 周末</h4>
+          <div id="workday-analysis" class="space-y-2 text-sm"></div>
+          <p id="insight-workday" class="mt-2 text-xs text-slate-500 leading-relaxed bg-slate-50 rounded-lg p-3"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 交易明细 -->
+    <section class="bg-white rounded-xl p-5 shadow-sm">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-base font-semibold text-slate-700">📋 收支明细</h3>
+        <div class="flex items-center gap-2">
+          <span class="text-xs text-slate-400">视图:</span>
+          <button id="view-flat" class="filter-btn px-2 py-1 text-xs rounded-md active" data-view="flat">平铺</button>
+          <button id="view-group" class="filter-btn px-2 py-1 text-xs rounded-md" data-view="group">按月折叠</button>
+          <input id="search" type="text" placeholder="搜索描述/分类..." class="px-3 py-1 text-sm border border-slate-300 rounded-md w-64">
+        </div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 text-slate-600">
+            <tr>
+              <th class="text-left py-2 px-3 cursor-pointer select-none" id="th-date" title="点击按日期排序">
+                日期 <span id="date-sort-icon" class="text-xs"></span>
+              </th>
+              <th class="text-left py-2 px-3">类型</th>
+              <th class="text-left py-2 px-3">分类</th>
+              <th class="text-left py-2 px-3">描述</th>
+              <th class="text-right py-2 px-3 cursor-pointer select-none" id="th-amount" title="点击按金额排序">
+                金额 <span id="amount-sort-icon" class="text-xs"></span>
+              </th>
+              <th class="text-center py-2 px-3">操作</th>
+            </tr>
+          </thead>
+          <tbody id="tx-tbody"></tbody>
+        </table>
+      </div>
+      <div class="text-center text-sm text-slate-500 mt-4">
+        共 <span id="tx-count">0</span> 条记录
+      </div>
+    </section>
+
+  </main>
+
+  <!-- 新增/编辑交易弹窗 -->
+  <div id="modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-20 flex items-center justify-center">
+    <div class="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
+      <h3 class="text-lg font-semibold text-slate-800 mb-4" id="modal-title">新增交易</h3>
+      <form id="tx-form" class="space-y-3">
+        <div>
+          <label class="text-sm text-slate-600">日期</label>
+          <input type="date" name="date" required class="w-full px-3 py-2 border border-slate-300 rounded-md mt-1">
+        </div>
+        <div>
+          <label class="text-sm text-slate-600">类型</label>
+          <select name="type" required class="w-full px-3 py-2 border border-slate-300 rounded-md mt-1">
+            <option value="支出">支出</option>
+            <option value="收入">收入</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-sm text-slate-600">分类</label>
+          <input type="text" name="category" required placeholder="如：餐饮、交通..." class="w-full px-3 py-2 border border-slate-300 rounded-md mt-1">
+        </div>
+        <div>
+          <label class="text-sm text-slate-600">描述</label>
+          <input type="text" name="desc" required placeholder="如：午饭 外卖" class="w-full px-3 py-2 border border-slate-300 rounded-md mt-1">
+        </div>
+        <div>
+          <label class="text-sm text-slate-600">金额 (支出填正数，收入填正数，类型自动判断正负)</label>
+          <input type="number" name="amount" required step="0.01" min="0.01" placeholder="如：66" class="w-full px-3 py-2 border border-slate-300 rounded-md mt-1">
+        </div>
+        <div class="flex gap-2 pt-2">
+          <button type="submit" class="flex-1 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">保存</button>
+          <button type="button" id="btn-cancel" class="flex-1 py-2 bg-slate-200 text-slate-700 rounded-md hover:bg-slate-300">取消</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <input type="file" id="file-input" accept=".csv" class="hidden">
+  <input type="file" id="restore-input" accept=".json" class="hidden">
+
+  <script>
+    // ==================== 数据层 ====================
+    // 数据版本号: 每次生成时注入, 版本变化则旧 localStorage 缓存失效
+    const DATA_VERSION = __DATA_VERSION__;
+    const SCHEMA_KEY = '__workbuddy_tx_data__';
+    const VERSION_KEY = '__workbuddy_tx_version__';
+    const META_KEY = '__workbuddy_tx_meta__';
+    const ACCOUNT_KEY = '__workbuddy_account_data__';
+    // 资料库 database ids (注入式绑定)
+    const DB_IDS = __DB_IDS__;
+    let DB_ID = DB_IDS.transactions;
+    const ACCOUNT_DB_ID = DB_IDS.accounts;
+
+    // 账户总览数据 (可由 build_html.py 通过 __ACCOUNT_OVERVIEW__ 注入; 未注入时用示例)
+    let ACCOUNT_DATA = {
+      accounts: [
+        { name: '账户A', type: '现金', amount: 0 },
+        { name: '账户B', type: '现金', amount: 0 },
+      ],
+      insurance: [
+        { name: '社保账户', amount: 0, note: '' },
+        { name: '公积金账户', amount: 0, note: '' },
+      ],
+      loan: null,
+    };
+    try {
+      const __INJ_ACCOUNTS__ = __ACCOUNT_OVERVIEW__;
+      if (Array.isArray(__INJ_ACCOUNTS__) && __INJ_ACCOUNTS__.length) {
+        ACCOUNT_DATA = {
+          accounts: __INJ_ACCOUNTS__.filter(r => r[1] !== '社保/公积金' && r[1] !== '负债').map(r => ({ name: r[0], type: r[1], amount: r[2] })),
+          insurance: __INJ_ACCOUNTS__.filter(r => r[1] === '社保/公积金').map(r => ({ name: r[0], amount: r[2], note: r[3] || '' })),
+          loan: (__INJ_ACCOUNTS__.find(r => r[1] === '负债') || [null, null, null, null])[0] ? { total: __INJ_ACCOUNTS__.find(r => r[1] === '负债')[2], years: 30, monthly: 0, paid: 0 } : null,
+        };
+      }
+    } catch (_) { /* 保留示例 */ }
+
+    // 内置月度数据 (由 build_html.py 注入)
+    const EMBEDDED_TX = __EMBEDDED_DATA__;
+
+    let allTx = []; // 全部交易 [{id, date, weekday, type, category, desc, amount}]
+    let filteredTx = [];
+    let currentYear = 'all';
+    let currentMonth = 'all';
+    let currentType = 'all';
+    let searchKeyword = '';
+    let editingId = null;
+    let sortBy = null;         // 'date' | 'amount' | null
+    let sortDir = 1;           // 1 升序 / -1 降序
+    let viewMode = 'flat';     // 'flat' 平铺 | 'group' 按月折叠
+    const collapsedMonths = new Set(); // 折叠的月份 YYYY-MM
+
+    // 统计范围数据: 按 年份+月份 过滤 (不受类型/搜索影响, 供统计卡片/图表/排行使用)
+    function getScopeTx() {
+      return allTx.filter(t => {
+        if (currentYear !== 'all' && t.date.substring(0, 4) !== currentYear) return false;
+        if (currentMonth !== 'all' && t.date.substring(0, 7).replace('-', '') !== currentMonth) return false;
+        return true;
+      });
+    }
+
+    // 当前筛选范围描述
+    function scopeLabel() {
+      const parts = [];
+      if (currentYear !== 'all') parts.push(currentYear + '年');
+      if (currentMonth !== 'all') parts.push(parseInt(currentMonth.slice(4)) + '月');
+      return parts.length ? parts.join('') + ' · ' : '';
+    }
+
+    // ==================== 初始化 ====================
+    function init() {
+      // 优先从 资料库 database 读取
+      loadFromDb().then(hasDbData => {
+        if (!hasDbData) {
+          // 否则从 localStorage 或内置数据 (带版本校验: 版本不一致则用内置新数据)
+          const cachedVer = localStorage.getItem(VERSION_KEY);
+          const cached = (cachedVer === DATA_VERSION) ? localStorage.getItem(SCHEMA_KEY) : null;
+          if (cached) {
+            try {
+              allTx = JSON.parse(cached);
+            } catch (e) {
+              allTx = [...EMBEDDED_TX];
+            }
+          } else {
+            allTx = [...EMBEDDED_TX];
+          }
+        } else {
+          // 从 db 读到数据, 同步版本
+          localStorage.setItem(VERSION_KEY, DATA_VERSION);
+        }
+        loadAccountFromDb();
+        saveLocal();
+        render();
+        bindEvents();
+      });
+    }
+
+    async function loadFromDb() {
+      try {
+        if (window.__SMART_PAGE__ && window.__SMART_PAGE__.database) {
+          const db = window.__SMART_PAGE__.database;
+          if (!DB_ID) {
+            const pageData = window.__PAGE_DATA__;
+            if (pageData && pageData.transactionsDbId) DB_ID = pageData.transactionsDbId;
+          }
+          if (DB_ID) {
+            // 分页循环读取全部记录 (防止单次 pageSize 只返回部分)
+            const collected = [];
+            let cursor = null;
+            let hasMore = true;
+            let guard = 0;
+            while (hasMore && guard < 20) {
+              const params = { databaseId: DB_ID, pageSize: 100 };
+              if (cursor) params.startCursor = cursor;
+              const result = await db.query(params);
+              const rows = (result && result.results) || [];
+              if (!rows.length) break;
+              rows.forEach(r => {
+                collected.push({
+                  id: r._id || r.record_id,
+                  date: (r['日期'] || '').substring(0, 10),
+                  weekday: r['星期'] || '',
+                  type: r['类型'] || '',
+                  category: r['分类'] || '',
+                  desc: r['描述'] || '',
+                  amount: parseFloat(r['金额']) || 0,
+                });
+              });
+              hasMore = !!(result && result.hasMore);
+              cursor = (result && result.nextCursor) || null;
+              guard++;
+            }
+            if (collected.length) {
+              allTx = collected;
+              allTx.sort((a, b) => a.date.localeCompare(b.date));
+              console.log(`从资料库读取 ${allTx.length} 条交易`);
+              return true;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('从 database 读取失败, 降级到 localStorage:', e);
+      }
+      return false;
+    }
+
+    async function loadAccountFromDb() {
+      try {
+        if (window.__SMART_PAGE__ && window.__SMART_PAGE__.database && ACCOUNT_DB_ID) {
+          const db = window.__SMART_PAGE__.database;
+          const result = await db.query({ databaseId: ACCOUNT_DB_ID, pageSize: 100 });
+          if (result && result.results && result.results.length) {
+            result.results.forEach(r => {
+              const name = r['账户名'] || '';
+              const amt = parseFloat(r['金额']) || 0;
+              const type = r['类型'] || '';
+              const note = r['备注'] || '';
+              if (['现金', '投资'].includes(type)) {
+                ACCOUNT_DATA.accounts.push({ name, type, amount: amt });
+              } else if (['社保', '公积金'].includes(type)) {
+                ACCOUNT_DATA.insurance.push({ name, amount: amt, note });
+              }
+            });
+            console.log('账户数据已从资料库加载');
+          }
+        }
+      } catch (e) {
+        console.warn('从 database 读取账户数据失败:', e);
+      }
+    }
+
+    function saveLocal() {
+      localStorage.setItem(SCHEMA_KEY, JSON.stringify(allTx));
+      localStorage.setItem(VERSION_KEY, DATA_VERSION);
+    }
+
+    async function saveToDb() {
+      try {
+        if (window.__SMART_PAGE__ && window.__SMART_PAGE__.database && DB_ID) {
+          const db = window.__SMART_PAGE__.database;
+          // 简化方案: 增量添加新交易
+          // 生产环境应按 record_id 精确更新/删除
+          const newItems = allTx.filter(t => t.id && t.id.startsWith('tx_') || t.id.startsWith('imp_'));
+          for (const t of newItems) {
+            const amount = t.type === '支出' ? -Math.abs(t.amount) : Math.abs(t.amount);
+            await db.addRecord({
+              databaseId: DB_ID,
+              properties: {
+                '日期': { date: t.date },
+                '星期': { text: t.weekday },
+                '类型': { select: t.type },
+                '分类': { text: t.category },
+                '描述': { text: t.desc },
+                '金额': { number: amount },
+              }
+            });
+          }
+          console.log(`已同步 ${newItems.length} 条新交易到资料库`);
+        }
+      } catch (e) {
+        console.warn('同步到 database 失败:', e);
+      }
+    }
+
+    async function deleteFromDb(id) {
+      try {
+        if (window.__SMART_PAGE__ && window.__SMART_PAGE__.database && DB_ID && id) {
+          const db = window.__SMART_PAGE__.database;
+          await db.deleteRecord({ databaseId: DB_ID, recordId: id });
+        }
+      } catch (e) {
+        console.warn('从 database 删除记录失败:', e);
+      }
+    }
+
+    // ==================== 渲染 ====================
+    function render() {
+      applyFilter();
+      renderToday();
+      renderStats();
+      renderCharts();
+      renderTable();
+      renderAccounts();
+      renderRanking('expense-ranking', '支出');
+      renderRanking('income-ranking', '收入');
+      renderDeepAnalysis();
+      renderChartInsights();
+    }
+
+    // ==================== 本月要处理 (铁律5) ====================
+    function renderToday() {
+      const box = document.getElementById('today-list');
+      const items = [];
+      const now = new Date();
+      const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+
+      // 1. 本月支出预算进度 (按真实支出, 预算默认9000)
+      const budget = 9000;
+      const monthExp = allTx.filter(t => t.date.startsWith(ym) && t.amount < 0 && t.category !== '理财')
+        .reduce((s, t) => s - t.amount, 0);
+      const pct = Math.min(100, (monthExp / budget * 100));
+      const over = monthExp > budget;
+      if (monthExp > 0) {
+        items.push(`
+          <div class="flex items-center gap-3 ${over ? 'bg-red-50 border border-red-200 rounded-lg p-2.5' : ''}">
+            <div class="w-24 text-sm text-slate-600 shrink-0">本月预算</div>
+            <div class="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden">
+              <div class="h-full ${over ? 'bg-red-500' : 'bg-blue-500'}" style="width:${pct}%"></div>
+            </div>
+            <div class="text-sm font-mono ${over ? 'negative text-red-600' : 'text-slate-600'} shrink-0">
+              ¥${monthExp.toFixed(0)} / ¥${budget} (${pct.toFixed(0)}%)
+              ${over ? '<span class="text-red-600 font-bold ml-1">已超支</span>' : ''}
+            </div>
+          </div>`);
+      }
+
+      // 2. 单笔大额支出提醒 (本月 >= 500 的非理财支出)
+      const bigTx = allTx.filter(t => t.date.startsWith(ym) && t.amount < 0 && t.category !== '理财' && -t.amount >= 500)
+        .sort((a, b) => a.amount - b.amount);
+      bigTx.forEach(t => {
+        items.push(`
+          <div class="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+            <div class="flex-1 min-w-0">
+              <span class="text-sm text-amber-900">⚠️ 大额支出 ${t.desc}</span>
+              <span class="text-xs text-amber-600 ml-2">${(t.date||'').substring(5)} · ${t.category}</span>
+            </div>
+            <span class="font-mono negative text-sm shrink-0 ml-2">¥${(-t.amount).toFixed(2)}</span>
+          </div>`);
+      });
+
+      // 3. 理财月收益 (本月理财净差额)
+      const liNet = allTx.filter(t => t.date.startsWith(ym) && t.category === '理财')
+        .reduce((s, t) => s + t.amount, 0);
+      if (liNet !== 0) {
+        items.push(`
+          <div class="flex items-center justify-between bg-slate-50 rounded-lg p-2.5">
+            <span class="text-sm text-slate-600">💹 本月理财净${liNet > 0 ? '收益' : '投入'}</span>
+            <span class="font-mono ${liNet > 0 ? 'positive' : 'negative'} text-sm">${liNet > 0 ? '+' : ''}¥${liNet.toFixed(2)}</span>
+          </div>`);
+      }
+
+      // 4. 异常数据提醒 (正数但描述像支出的记录, 疑似记账错误; 排除红包/退款/报销等合理收入)
+      const sus = allTx.filter(t => t.amount > 0 && /(给|买|点|交|充|付|购|订)/.test(t.desc) && !/红包|礼金|退款|报销|退回|工资|绩效|补贴/.test(t.desc) && t.amount < 5000);
+      if (sus.length) {
+        sus.slice(0, 3).forEach(t => {
+          items.push(`
+            <div class="flex items-center justify-between bg-purple-50 border border-purple-200 rounded-lg p-2.5">
+              <div class="flex-1 min-w-0">
+                <span class="text-sm text-purple-900">🧐 疑似记错符号: ${t.desc} (记为收入)</span>
+                <span class="text-xs text-purple-600 ml-2">${t.date}</span>
+              </div>
+              <span class="font-mono positive text-sm shrink-0 ml-2">¥${t.amount.toFixed(2)}</span>
+            </div>`);
+        });
+      }
+
+      // 5. 无数据提示
+      if (!items.length) {
+        items.push(`<div class="text-sm text-slate-400">本月暂无需要处理的事项 🎉</div>`);
+      }
+      box.innerHTML = items.join('');
+    }
+
+    function applyFilter() {
+      filteredTx = allTx.filter(t => {
+        if (currentMonth !== 'all') {
+          const ym = t.date.substring(0, 7).replace('-', '');
+          if (ym !== currentMonth) return false;
+        }
+        if (currentType !== 'all' && t.type !== currentType) return false;
+        if (searchKeyword) {
+          const kw = searchKeyword.toLowerCase();
+          if (!t.desc.toLowerCase().includes(kw) && !t.category.toLowerCase().includes(kw)) return false;
+        }
+        return true;
+      });
+    }
+
+    function renderStats() {
+      // 真实口径: 剔除理财流水, 理财只看净差额; 统计范围 = 当前年份+月份筛选
+      const scope = getScopeTx();
+      const liInc = scope.filter(t => t.amount > 0 && t.category === '理财').reduce((s, t) => s + t.amount, 0);
+      const liExp = -scope.filter(t => t.amount < 0 && t.category === '理财').reduce((s, t) => s + t.amount, 0);
+      const inc = scope.filter(t => t.amount > 0 && t.category !== '理财').reduce((s, t) => s + t.amount, 0);
+      const exp = -scope.filter(t => t.amount < 0 && t.category !== '理财').reduce((s, t) => s + t.amount, 0);
+      const liNet = liInc - liExp; // 理财净差额: 正=净收益, 负=净投入
+      const net = inc - exp;
+      const rate = inc > 0 ? (net / inc * 100).toFixed(1) : 0;
+
+      document.getElementById('total-income').textContent = '¥' + inc.toFixed(2);
+      document.getElementById('total-expense').textContent = '¥' + exp.toFixed(2);
+      const netEl = document.getElementById('net-balance');
+      netEl.textContent = (net >= 0 ? '+' : '') + '¥' + net.toFixed(2);
+      netEl.className = 'text-2xl font-bold mt-1 ' + (net >= 0 ? 'positive' : 'negative');
+      document.getElementById('savings-rate').textContent = rate + '%';
+
+      // 按月统计(真实口径 + 理财净差额)
+      const byMonth = {};
+      scope.forEach(t => {
+        const ym = t.date.substring(0, 7);
+        if (!byMonth[ym]) byMonth[ym] = { inc: 0, exp: 0, liInc: 0, liExp: 0 };
+        if (t.amount > 0) {
+          byMonth[ym].inc += t.amount;
+          if (t.category === '理财') byMonth[ym].liInc += t.amount;
+        } else {
+          byMonth[ym].exp += -t.amount;
+          if (t.category === '理财') byMonth[ym].liExp += -t.amount;
+        }
+      });
+      const months = Object.keys(byMonth).sort();
+      document.getElementById('income-detail').textContent = months.map(m => {
+        const s = byMonth[m];
+        return `${m}: ¥${(s.inc - s.liInc).toFixed(0)}`;
+      }).join(' · ');
+      document.getElementById('expense-detail').textContent = months.map(m => {
+        const s = byMonth[m];
+        return `${m}: ¥${(s.exp - s.liExp).toFixed(0)}`;
+      }).join(' · ');
+      document.getElementById('balance-detail').textContent = `${scopeLabel()}理财净差额: ${liNet >= 0 ? '+' : ''}¥${liNet.toFixed(2)}`;
+      document.getElementById('rate-detail').textContent = `${scopeLabel()}共 ${scope.length} 笔交易(已剔除理财流水)`;
+    }
+
+    let trendChart, categoryChart;
+    function renderCharts() {
+      // 趋势图 (真实口径, 剔除理财; 范围=当前年月筛选)
+      const scope = getScopeTx();
+      const byMonth = {};
+      scope.forEach(t => {
+        const ym = t.date.substring(0, 7);
+        if (!byMonth[ym]) byMonth[ym] = { inc: 0, exp: 0 };
+        if (t.amount > 0) { if (t.category !== '理财') byMonth[ym].inc += t.amount; }
+        else { if (t.category !== '理财') byMonth[ym].exp += -t.amount; }
+      });
+      const months = Object.keys(byMonth).sort();
+      const incData = months.map(m => byMonth[m].inc.toFixed(2));
+      const expData = months.map(m => byMonth[m].exp.toFixed(2));
+      const ctx1 = document.getElementById('trendChart').getContext('2d');
+      if (trendChart) trendChart.destroy();
+      trendChart = new Chart(ctx1, {
+        type: 'bar',
+        data: {
+          labels: months,
+          datasets: [
+            { label: '真实收入', data: incData, backgroundColor: '#dc2626', borderRadius: 4 },
+            { label: '真实支出', data: expData, backgroundColor: '#16a34a', borderRadius: 4 },
+          ],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'top' } },
+          scales: { y: { beginAtZero: true } },
+        },
+      });
+
+      // 分类饼图 (剔除理财)
+      const catExp = {};
+      scope.filter(t => t.amount < 0 && t.category !== '理财').forEach(t => {
+        catExp[t.category] = (catExp[t.category] || 0) + (-t.amount);
+      });
+      const sorted = Object.entries(catExp).sort((a, b) => b[1] - a[1]);
+      const colors = ['#16a34a', '#dc2626', '#2563eb', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1', '#14b8a6', '#a3a3a3'];
+      const ctx2 = document.getElementById('categoryChart').getContext('2d');
+      if (categoryChart) categoryChart.destroy();
+      categoryChart = new Chart(ctx2, {
+        type: 'doughnut',
+        data: {
+          labels: sorted.map(s => s[0]),
+          datasets: [{ data: sorted.map(s => s[1].toFixed(2)), backgroundColor: colors.slice(0, sorted.length) }],
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { font: { size: 11 } } } } },
+      });
+    }
+
+    function renderRanking(targetId, filterType) {
+      const scope = getScopeTx();
+      const cat = {};
+      // 非理财流水按分类汇总
+      scope.filter(t => t.type === filterType && t.category !== '理财').forEach(t => {
+        const k = t.category;
+        const v = filterType === '支出' ? -t.amount : t.amount;
+        cat[k] = (cat[k] || 0) + v;
+      });
+      // 理财只按净差额参与排行: 差额为正→收入排行, 差额为负→支出排行
+      const liNet = scope.filter(t => t.category === '理财').reduce((s, t) => s + t.amount, 0);
+      if (filterType === '支出' && liNet < 0) {
+        cat['理财'] = (cat['理财'] || 0) + (-liNet);
+      } else if (filterType === '收入' && liNet > 0) {
+        cat['理财'] = (cat['理财'] || 0) + liNet;
+      }
+      const sorted = Object.entries(cat).sort((a, b) => b[1] - a[1]).slice(0, 10);
+      const total = sorted.reduce((s, e) => s + e[1], 0);
+      const html = sorted.map(([k, v]) => {
+        const pct = total > 0 ? (v / total * 100).toFixed(1) : 0;
+        return `
+          <div class="flex items-center gap-2">
+            <div class="w-24 text-sm text-slate-600 truncate">${k}</div>
+            <div class="flex-1 bg-slate-100 rounded-full h-5 overflow-hidden">
+              <div class="h-full ${filterType === '支出' ? 'bg-green-500' : 'bg-red-400'}" style="width: ${pct}%"></div>
+            </div>
+            <div class="w-28 text-right text-sm font-medium ${filterType === '支出' ? 'negative' : 'positive'}">¥${v.toFixed(2)} (${pct}%)</div>
+          </div>
+        `;
+      }).join('');
+      document.getElementById(targetId).innerHTML = html || '<div class="text-slate-400 text-sm">暂无数据</div>';
+    }
+
+    function renderTable() {
+      // 排序状态: sortBy = 'date' | 'amount' | null; sortDir = 1 | -1
+      let rows = filteredTx.slice();
+      if (sortBy === 'amount') {
+        rows.sort((a, b) => (a.amount - b.amount) * sortDir);
+      } else if (sortBy === 'date') {
+        rows.sort((a, b) => (a.date.localeCompare(b.date) || a.amount - b.amount) * sortDir);
+      }
+
+      // 排序图标
+      document.getElementById('date-sort-icon').textContent = sortBy === 'date' ? (sortDir === 1 ? '▲' : '▼') : '';
+      document.getElementById('amount-sort-icon').textContent = sortBy === 'amount' ? (sortDir === 1 ? '▲' : '▼') : '';
+
+      const rowHtml = t => `
+        <tr class="border-b border-slate-100">
+          <td class="py-2 px-3 text-slate-700">${(t.date||'').substring(0,10)}<br><span class="text-xs text-slate-400">${t.weekday}</span></td>
+          <td class="py-2 px-3"><span class="badge ${t.type === '收入' ? 'badge-income' : 'badge-expense'}">${t.type}</span></td>
+          <td class="py-2 px-3 text-slate-600">${t.category}</td>
+          <td class="py-2 px-3 text-slate-700">${t.desc}</td>
+          <td class="py-2 px-3 text-right font-mono ${t.amount > 0 ? 'positive' : 'negative'}">${t.amount > 0 ? '+' : ''}${t.amount.toFixed(2)}</td>
+          <td class="py-2 px-3 text-center">
+            <button class="text-blue-600 hover:underline text-xs" onclick="editTx('${t.id}')">编辑</button>
+            <button class="text-red-600 hover:underline text-xs ml-2" onclick="deleteTx('${t.id}')">删除</button>
+          </td>
+        </tr>`;
+
+      let html = '';
+      if (viewMode === 'group') {
+        // 按月分组, 分组头可点击折叠
+        const groups = {};
+        rows.forEach(t => {
+          const ym = (t.date || '').substring(0, 7);
+          (groups[ym] = groups[ym] || []).push(t);
+        });
+        const yms = Object.keys(groups).sort().reverse(); // 最新月在上
+        yms.forEach(ym => {
+          const g = groups[ym];
+          const inc = g.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+          const exp = -g.filter(t => t.amount < 0).reduce((s, t) => s + t.amount, 0);
+          const collapsed = collapsedMonths.has(ym);
+          html += `
+            <tr class="bg-slate-100/70 border-b border-slate-200 cursor-pointer select-none" onclick="toggleMonth('${ym}')">
+              <td colspan="6" class="py-2 px-3">
+                <span class="inline-block w-4 text-slate-400">${collapsed ? '▶' : '▼'}</span>
+                <span class="font-semibold text-slate-700">${ym.slice(0,4)}年${parseInt(ym.slice(5))}月</span>
+                <span class="text-xs text-slate-500 ml-3">${g.length} 笔</span>
+                <span class="text-xs ml-3">收入 <span class="positive font-semibold">¥${inc.toFixed(2)}</span></span>
+                <span class="text-xs ml-2">支出 <span class="negative font-semibold">¥${exp.toFixed(2)}</span></span>
+              </td>
+            </tr>`;
+          if (!collapsed) {
+            g.forEach(t => { html += rowHtml(t); });
+          }
+        });
+      } else {
+        html = rows.map(rowHtml).join('');
+      }
+
+      document.getElementById('tx-tbody').innerHTML = html || '<tr><td colspan="6" class="text-center text-slate-400 py-6">无数据</td></tr>';
+      document.getElementById('tx-count').textContent = filteredTx.length;
+    }
+
+    // 折叠/展开某个月份 (点击月份分组头)
+    window.toggleMonth = function (ym) {
+      if (collapsedMonths.has(ym)) collapsedMonths.delete(ym);
+      else collapsedMonths.add(ym);
+      render();
+    };
+
+    function renderAccounts() {
+      const accHtml = (ACCOUNT_DATA.accounts || []).map(a => `
+        <tr class="border-b border-slate-100">
+          <td class="py-2 text-slate-700">${a.name}</td>
+          <td class="py-2 text-slate-500 text-xs">${a.type}</td>
+          <td class="py-2 text-right font-mono font-semibold">¥${a.amount.toFixed(2)}</td>
+        </tr>
+      `).join('');
+      document.getElementById('account-table').innerHTML = accHtml || '<tr><td colspan="3" class="text-center text-slate-400 py-4">无账户数据</td></tr>';
+      const liquid = (ACCOUNT_DATA.accounts || []).reduce((s, a) => s + a.amount, 0);
+      document.getElementById('liquid-total').textContent = '¥' + liquid.toFixed(2);
+
+      const insHtml = (ACCOUNT_DATA.insurance || []).map(i => `
+        <tr class="border-b border-slate-100">
+          <td class="py-2 text-slate-700">${i.name}</td>
+          <td class="py-2 text-slate-500 text-xs">${i.note}</td>
+          <td class="py-2 text-right font-mono font-semibold text-blue-600">¥${i.amount.toFixed(2)}</td>
+        </tr>
+      `).join('');
+      document.getElementById('insurance-table').innerHTML = insHtml || '<tr><td colspan="3" class="text-center text-slate-400 py-4">无数据</td></tr>';
+
+      const loan = ACCOUNT_DATA.loan;
+      if (!loan) {
+        document.getElementById('loan-detail').innerHTML = '<div class="text-slate-400 text-sm">无贷款信息</div>';
+        return;
+      }
+      const remaining = loan.total - (loan.monthly - (loan.decrease || 0)) * (loan.paid || 0); // 简化估算
+      document.getElementById('loan-detail').innerHTML = `
+        <div>贷款总额: <span class="font-mono">¥${loan.total.toLocaleString()}</span></div>
+        <div>期限: ${loan.years}年 · 已还${loan.paid || 0}期 · 月供: <span class="font-mono">¥${loan.monthly.toFixed(2)}</span>${loan.decrease ? ` (每月递减¥${loan.decrease})` : ''}</div>
+        <div>已还本息合计 ≈ <span class="font-mono">¥${((loan.monthly + (loan.monthly - (loan.decrease || 0) * ((loan.paid || 1) - 1))) * (loan.paid || 0) / 2).toFixed(2)}</span></div>
+      `;
+    }
+
+    // ==================== 深度分析 ====================
+    let catTrendChart, incomeMixChart;
+
+    function daysInMonth(ym) {
+      const [y, m] = ym.split('-').map(Number);
+      return new Date(y, m, 0).getDate();
+    }
+
+    function getMonthStats() {
+      const scope = getScopeTx();
+      const byMonth = {};
+      scope.forEach(t => {
+        const ym = t.date.substring(0, 7);
+        if (!byMonth[ym]) byMonth[ym] = { inc: 0, exp: 0, liInc: 0, liExp: 0 };
+        if (t.amount > 0) {
+          byMonth[ym].inc += t.amount;
+          if (t.category === '理财') byMonth[ym].liInc += t.amount;
+        } else {
+          byMonth[ym].exp += -t.amount;
+          if (t.category === '理财') byMonth[ym].liExp += -t.amount;
+        }
+      });
+      const months = Object.keys(byMonth).sort();
+      return months.map(m => {
+        const s = byMonth[m];
+        const realInc = s.inc - s.liInc;
+        const realExp = s.exp - s.liExp;
+        return {
+          ym: m,
+          days: daysInMonth(m),
+          inc: s.inc, exp: s.exp,
+          realInc, realExp,
+          net: s.inc - s.exp,
+          realNet: realInc - realExp,
+          dayInc: s.inc / daysInMonth(m),
+          dayExp: s.exp / daysInMonth(m),
+          dayRealExp: realExp / daysInMonth(m),
+        };
+      });
+    }
+
+    function pctChange(cur, prev) {
+      if (!prev || prev === 0) return '—';
+      const v = (cur - prev) / prev * 100;
+      const sign = v > 0 ? '+' : '';
+      const cls = v > 0 ? 'positive' : 'negative';
+      return `<span class="${cls}">${sign}${v.toFixed(1)}%</span>`;
+    }
+
+    function renderDeepAnalysis() {
+      const stats = getMonthStats();
+      if (!stats.length) return;
+      // 取最近两个月作为环比基准 (前月 → 后月, 日均口径仅用于不完整月)
+      const sorted = [...stats].sort((a, b) => a.ym.localeCompare(b.ym));
+      const last = sorted[sorted.length - 1];
+      const prev = sorted[sorted.length - 2];
+      const prev2 = sorted[sorted.length - 3];
+      const today = new Date();
+      const isCurrentMonth = last => {
+        const [y, m] = last.ym.split('-').map(Number);
+        return y === today.getFullYear() && (m - 1) === today.getMonth();
+      };
+      const curIsPartial = isCurrentMonth(last);
+
+      // 卡片1: 前2月 → 前1月 (完整月对完整月)
+      if (prev2 && prev) {
+        document.getElementById('chg-inc-67').innerHTML =
+          pctChange(prev.realInc, prev2.realInc) +
+          `<div class="text-xs font-normal text-slate-400 mt-0.5">¥${prev2.realInc.toFixed(0)} → ¥${prev.realInc.toFixed(0)}</div>`;
+        document.getElementById('chg-exp-67').innerHTML =
+          pctChange(prev.realExp, prev2.realExp) +
+          `<div class="text-xs font-normal text-slate-400 mt-0.5">¥${prev2.realExp.toFixed(0)} → ¥${prev.realExp.toFixed(0)}</div>`;
+        // 更新卡片标题
+        document.getElementById('chg-inc-67-title').textContent = `${prev2.ym.slice(5)}月 → ${prev.ym.slice(5)}月 收入`;
+        document.getElementById('chg-exp-67-title').textContent = `${prev2.ym.slice(5)}月 → ${prev.ym.slice(5)}月 支出`;
+      } else if (prev) {
+        document.getElementById('chg-inc-67').innerHTML = `¥${prev.realInc.toFixed(0)}` + `<div class="text-xs font-normal text-slate-400 mt-0.5">${prev.ym.slice(5)}月真实收入</div>`;
+        document.getElementById('chg-exp-67').innerHTML = `¥${prev.realExp.toFixed(0)}` + `<div class="text-xs font-normal text-slate-400 mt-0.5">${prev.ym.slice(5)}月真实支出</div>`;
+        document.getElementById('chg-inc-67-title').textContent = `${prev.ym.slice(5)}月 收入`;
+        document.getElementById('chg-exp-67-title').textContent = `${prev.ym.slice(5)}月 支出`;
+      }
+
+      // 卡片2: 前1月 → 最近月 (如果最近月是当前不完整月, 用日均)
+      if (prev && last) {
+        let incHtml, expHtml, titleInc, titleExp;
+        if (curIsPartial) {
+          incHtml = pctChange(last.realInc / last.days, prev.realInc / prev.days) +
+            `<div class="text-xs font-normal text-slate-400 mt-0.5">日均 ¥${(prev.realInc/prev.days).toFixed(0)} → ¥${(last.realInc/last.days).toFixed(0)} (${last.ym.slice(5)}月仅至当前)</div>`;
+          expHtml = pctChange(last.realExp / last.days, prev.realExp / prev.days) +
+            `<div class="text-xs font-normal text-slate-400 mt-0.5">日均 ¥${(prev.realExp/prev.days).toFixed(0)} → ¥${(last.realExp/last.days).toFixed(0)} (${last.ym.slice(5)}月仅至当前)</div>`;
+        } else {
+          incHtml = pctChange(last.realInc, prev.realInc) +
+            `<div class="text-xs font-normal text-slate-400 mt-0.5">¥${prev.realInc.toFixed(0)} → ¥${last.realInc.toFixed(0)}</div>`;
+          expHtml = pctChange(last.realExp, prev.realExp) +
+            `<div class="text-xs font-normal text-slate-400 mt-0.5">¥${prev.realExp.toFixed(0)} → ¥${last.realExp.toFixed(0)}</div>`;
+        }
+        document.getElementById('chg-inc-78').innerHTML = incHtml;
+        document.getElementById('chg-exp-78').innerHTML = expHtml;
+        document.getElementById('chg-inc-78-title').textContent = `${prev.ym.slice(5)}月 → ${last.ym.slice(5)}月 收入${curIsPartial?'(日均)':''}`;
+        document.getElementById('chg-exp-78-title').textContent = `${prev.ym.slice(5)}月 → ${last.ym.slice(5)}月 支出${curIsPartial?'(日均)':''}`;
+      } else if (last) {
+        document.getElementById('chg-inc-78').innerHTML = `¥${last.realInc.toFixed(0)}` + `<div class="text-xs font-normal text-slate-400 mt-0.5">${last.ym.slice(5)}月真实收入</div>`;
+        document.getElementById('chg-exp-78').innerHTML = `¥${last.realExp.toFixed(0)}` + `<div class="text-xs font-normal text-slate-400 mt-0.5">${last.ym.slice(5)}月真实支出</div>`;
+        document.getElementById('chg-inc-78-title').textContent = `${last.ym.slice(5)}月 收入`;
+        document.getElementById('chg-exp-78-title').textContent = `${last.ym.slice(5)}月 支出`;
+      }
+
+      renderCatTrend(stats);
+      renderIncomeMix(stats);
+      renderTopExpenses();
+      renderFrequentSpends();
+      renderWorkdayAnalysis();
+    }
+
+    function renderCatTrend(stats) {
+      // 主要支出分类月度趋势 (堆叠柱状)
+      const cats = ['餐饮', '医疗', '住房', '交通', '服饰', '娱乐', '汽车', '其它'];
+      const catColors = ['#16a34a', '#dc2626', '#2563eb', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#94a3b8'];
+      const scope = getScopeTx();
+      const datasets = [];
+      cats.forEach((cat, i) => {
+        datasets.push({
+          label: cat,
+          data: stats.map(s => {
+            const v = scope.filter(t => t.date.startsWith(s.ym) && t.amount < 0 && t.category === cat)
+              .reduce((sum, t) => sum - t.amount, 0);
+            return v.toFixed(2);
+          }),
+          backgroundColor: catColors[i],
+          borderRadius: 2,
+        });
+      });
+      const ctx = document.getElementById('catTrendChart').getContext('2d');
+      if (catTrendChart) catTrendChart.destroy();
+      catTrendChart = new Chart(ctx, {
+        type: 'bar',
+        data: { labels: stats.map(s => s.ym), datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'top', labels: { font: { size: 10 } } } },
+          scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { callback: v => '¥' + v } } },
+        },
+      });
+    }
+
+    function renderIncomeMix(stats) {
+      // 收入结构月度 (工资/出差/红包), 理财只显示净差额
+      const scope = getScopeTx();
+      const cats = ['工资', '出差', '红包'];
+      const colors = ['#dc2626', '#2563eb', '#ec4899'];
+      const datasets = [];
+      cats.forEach((cat, i) => {
+        datasets.push({
+          label: cat,
+          data: stats.map(s => {
+            const v = scope.filter(t => t.date.startsWith(s.ym) && t.amount > 0 && t.category === cat)
+              .reduce((sum, t) => sum + t.amount, 0);
+            return v.toFixed(2);
+          }),
+          backgroundColor: colors[i],
+          borderRadius: 2,
+        });
+      });
+      // 理财净差额作为折线 (净收益>0为正, 净投入<0为负)
+      datasets.push({
+        label: '理财净差额',
+        type: 'line',
+        data: stats.map(s => (s.liInc - s.liExp).toFixed(2)),
+        borderColor: '#f59e0b',
+        backgroundColor: '#f59e0b',
+        pointRadius: 4,
+        tension: 0.3,
+        yAxisID: 'y',
+      });
+      const ctx = document.getElementById('incomeMixChart').getContext('2d');
+      if (incomeMixChart) incomeMixChart.destroy();
+      incomeMixChart = new Chart(ctx, {
+        type: 'bar',
+        data: { labels: stats.map(s => s.ym), datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'top', labels: { font: { size: 10 } } } },
+          scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { callback: v => '¥' + v } } },
+        },
+      });
+    }
+
+    function renderTopExpenses() {
+      const scope = getScopeTx();
+      const top = scope.filter(t => t.amount < 0 && t.category !== '理财')
+        .sort((a, b) => a.amount - b.amount)
+        .slice(0, 10);
+      const html = top.map((t, i) => `
+        <div class="flex items-center justify-between gap-2 py-1 border-b border-slate-50">
+          <div class="flex-1 min-w-0">
+            <span class="text-slate-700 truncate block">${i + 1}. ${t.desc}</span>
+            <span class="text-xs text-slate-400">${(t.date||'').substring(0,10)} · ${t.category}</span>
+          </div>
+          <span class="font-mono negative whitespace-nowrap">¥${(-t.amount).toFixed(2)}</span>
+        </div>
+      `).join('');
+      document.getElementById('top-expenses').innerHTML = html || '<div class="text-slate-400">暂无数据</div>';
+    }
+
+    function renderFrequentSpends() {
+      // 按描述统计支出次数(忽略"理财"); 范围=当前年月筛选
+      const scope = getScopeTx();
+      const freq = {};
+      scope.filter(t => t.amount < 0 && t.category !== '理财').forEach(t => {
+        // 归一化: 去掉开头的数字前缀(如"第1笔"), 保留描述主体做频次统计
+        const key = t.desc.replace(/^\d+/, '');
+        freq[key] = (freq[key] || 0) + 1;
+      });
+      const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 10);
+      const max = sorted.length ? sorted[0][1] : 1;
+      const html = sorted.map(([k, v]) => `
+        <div class="flex items-center gap-2">
+          <div class="w-32 text-slate-700 truncate">${k}</div>
+          <div class="flex-1 bg-slate-100 rounded-full h-4 overflow-hidden">
+            <div class="h-full bg-blue-400" style="width: ${(v / max * 100).toFixed(0)}%"></div>
+          </div>
+          <div class="w-8 text-right text-slate-500 font-mono">${v}次</div>
+        </div>
+      `).join('');
+      document.getElementById('freq-spends').innerHTML = html || '<div class="text-slate-400">暂无数据</div>';
+    }
+
+    function renderWorkdayAnalysis() {
+      const scope = getScopeTx();
+      const wd = { n: 0, sum: 0 }, we = { n: 0, sum: 0 };
+      scope.filter(t => t.amount < 0 && t.category !== '理财').forEach(t => {
+        const d = new Date(t.date);
+        const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+        if (isWeekend) { we.n++; we.sum += -t.amount; }
+        else { wd.n++; wd.sum += -t.amount; }
+      });
+      const wdAvg = wd.n ? wd.sum / wd.n : 0;
+      const weAvg = we.n ? we.sum / we.n : 0;
+      const pct = weAvg > 0 ? ((weAvg - wdAvg) / wdAvg * 100).toFixed(1) : '0';
+      const html = `
+        <div class="bg-slate-50 rounded-lg p-3">
+          <div class="text-xs text-slate-500">工作日日均支出 (${wd.n}笔)</div>
+          <div class="text-xl font-bold mt-1">¥${wdAvg.toFixed(2)}</div>
+        </div>
+        <div class="bg-slate-50 rounded-lg p-3">
+          <div class="text-xs text-slate-500">周末日均支出 (${we.n}笔)</div>
+          <div class="text-xl font-bold mt-1">¥${weAvg.toFixed(2)}</div>
+        </div>
+        <div class="bg-amber-50 rounded-lg p-3 text-xs text-amber-800 leading-relaxed">
+          周末单笔平均比工作日高 <b>${pct > 0 ? '+' : ''}${pct}%</b>，
+          主要因为周末多为约会/外出聚餐和住宿开销。
+        </div>
+      `;
+      document.getElementById('workday-analysis').innerHTML = html;
+    }
+
+    // ==================== 图表解读 (动态生成, 随筛选范围变化) ====================
+    function fmtY(n) { return '¥' + Math.round(n).toLocaleString(); }
+
+    function renderChartInsights() {
+      const scope = getScopeTx();
+      if (!scope.length) {
+        document.querySelectorAll('[id^="insight-"]').forEach(el => el.textContent = '当前范围暂无数据');
+        return;
+      }
+      const s = scopeLabel().replace(' · ', '');
+
+      // 1. 概览解读 (含储蓄率说明)
+      const liInc = scope.filter(t => t.amount > 0 && t.category === '理财').reduce((a, t) => a + t.amount, 0);
+      const liExp = -scope.filter(t => t.amount < 0 && t.category === '理财').reduce((a, t) => a + t.amount, 0);
+      const inc = scope.filter(t => t.amount > 0 && t.category !== '理财').reduce((a, t) => a + t.amount, 0);
+      const exp = -scope.filter(t => t.amount < 0 && t.category !== '理财').reduce((a, t) => a + t.amount, 0);
+      const net = inc - exp;
+      const rate = inc > 0 ? (net / inc * 100) : 0;
+      const liNet = liInc - liExp;
+      document.getElementById('insight-overview').innerHTML =
+        `<b>📝 解读：</b>${s}真实收入 ${fmtY(inc)}、真实支出 ${fmtY(exp)}，净结余 ${net >= 0 ? '+' : ''}${fmtY(net)}。
+         <b>储蓄率 ${rate.toFixed(1)}% = 净结余 ÷ 真实收入</b>，即每挣 1 元存下 ${rate.toFixed(0)} 毛，是衡量"能留下多少"的核心指标。
+         理财净差额 ${liNet >= 0 ? '+' : ''}${fmtY(liNet)}（${liNet >= 0 ? '净收益' : '净投入'}），未计入上表。`;
+
+      // 2. 趋势图解读
+      const byMonth = {};
+      scope.forEach(t => {
+        const ym = t.date.substring(0, 7);
+        if (!byMonth[ym]) byMonth[ym] = { inc: 0, exp: 0 };
+        if (t.amount > 0) { if (t.category !== '理财') byMonth[ym].inc += t.amount; }
+        else { if (t.category !== '理财') byMonth[ym].exp += -t.amount; }
+      });
+      const ms = Object.keys(byMonth).sort();
+      let trendTxt = '';
+      if (ms.length >= 2) {
+        const maxIncM = ms.reduce((a, b) => byMonth[a].inc > byMonth[b].inc ? a : b);
+        const maxExpM = ms.reduce((a, b) => byMonth[a].exp > byMonth[b].exp ? a : b);
+        const first = byMonth[ms[0]], last = byMonth[ms[ms.length - 1]];
+        const trend = last.exp > first.exp ? '上升' : (last.exp < first.exp ? '下降' : '持平');
+        trendTxt = `收入峰值在 ${maxIncM.slice(5)}月（${fmtY(byMonth[maxIncM].inc)}），支出峰值在 ${maxExpM.slice(5)}月（${fmtY(byMonth[maxExpM].exp)}）。从 ${ms[0].slice(5)}月到 ${ms[ms.length-1].slice(5)}月，真实支出整体${trend}。`;
+      } else {
+        trendTxt = `当前范围仅 ${ms.length} 个月（${ms[0].slice(5)}月），单月趋势参考价值有限，建议切回"全部月份"看跨月对比。`;
+      }
+      document.getElementById('insight-trend').textContent = '📊 趋势解读：' + trendTxt;
+
+      // 3. 分类饼图解读
+      const catExp = {};
+      scope.filter(t => t.amount < 0 && t.category !== '理财').forEach(t => {
+        catExp[t.category] = (catExp[t.category] || 0) + (-t.amount);
+      });
+      const catSorted = Object.entries(catExp).sort((a, b) => b[1] - a[1]);
+      const catTotal = catSorted.reduce((a, e) => a + e[1], 0);
+      let catTxt = '暂无支出数据';
+      if (catSorted.length) {
+        const top1 = catSorted[0], top2 = catSorted[1], top3 = catSorted[2];
+        const p1 = catTotal ? (top1[1] / catTotal * 100).toFixed(0) : 0;
+        const pTop3 = catTotal ? ((top1[1] + (top2?top2[1]:0) + (top3?top3[1]:0)) / catTotal * 100).toFixed(0) : 0;
+        catTxt = `最大支出分类是 <b>${top1[0]}（${fmtY(top1[1])}，占 ${p1}%）</b>，其后是 ${top2 ? top2[0] + '、' : ''}${top3 ? top3[0] : ''}。前三大分类合计占 ${pTop3}% 的真实支出。`;
+      }
+      document.getElementById('insight-category').innerHTML = '🥧 分类解读：' + catTxt;
+
+      // 4. 支出排行解读
+      let expRankTxt = '暂无数据';
+      if (catSorted.length) {
+        expRankTxt = `支出集中在 ${catSorted.slice(0, 3).map(e => e[0] + '（' + fmtY(e[1]) + '）').join('、')}。`;
+      }
+      document.getElementById('insight-ranking-exp').textContent = '🏆 排行解读：' + expRankTxt;
+
+      // 5. 收入构成解读
+      const incCat = {};
+      scope.filter(t => t.amount > 0 && t.category !== '理财').forEach(t => {
+        incCat[t.category] = (incCat[t.category] || 0) + t.amount;
+      });
+      const incSorted = Object.entries(incCat).sort((a, b) => b[1] - a[1]);
+      const incTotal = incSorted.reduce((a, e) => a + e[1], 0);
+      let incRankTxt = '暂无数据';
+      if (incSorted.length) {
+        const top1 = incSorted[0];
+        const p1 = incTotal ? (top1[1] / incTotal * 100).toFixed(0) : 0;
+        incRankTxt = `收入主要来自 <b>${top1[0]}（${fmtY(top1[1])}，占 ${p1}%）</b>。${top1[0] === '出差' ? '出差报销占比高，属于非持续性收入，做预算时不宜按此计算。' : ''}`;
+      }
+      document.getElementById('insight-ranking-inc').innerHTML = '💼 收入解读：' + incRankTxt;
+
+      // 6. 账户总览解读
+      const liquid = ACCOUNT_DATA.accounts.reduce((a, x) => a + x.amount, 0);
+      const insTotal = ACCOUNT_DATA.insurance.reduce((a, x) => a + x.amount, 0);
+      document.getElementById('insight-account').textContent =
+        `🏦 解读：流动资金合计 ${fmtY(liquid)}；五险一金/公积金合计 ${fmtY(insTotal)}。${ACCOUNT_DATA.loan ? `住房贷款月供 ¥${(ACCOUNT_DATA.loan.monthly||0).toFixed(1)}，${ACCOUNT_DATA.loan.years} 年期，已还 ${ACCOUNT_DATA.loan.paid||0} 期。` : ''}`;
+
+      // 8. 分类趋势解读
+      let ctTxt = '暂无数据';
+      if (catSorted.length) {
+        ctTxt = `支出结构以 <b>${catSorted[0][0]}</b> 为主（${fmtY(catSorted[0][1])}）。${catSorted[1] ? catSorted[1][0] + '（' + fmtY(catSorted[1][1]) + '）' : ''}${catSorted[2] ? '、' + catSorted[2][0] + '（' + fmtY(catSorted[2][1]) + '）' : ''} 分列其后。`;
+      }
+      document.getElementById('insight-cattrend').innerHTML = '📚 分类趋势解读：' + ctTxt;
+
+      // 9. 收入结构解读
+      let imTxt = '暂无数据';
+      if (incSorted.length) {
+        imTxt = `收入结构：${incSorted.slice(0, 3).map(e => e[0] + ' ' + fmtY(e[1])).join('、')}。理财净差额 ${liNet >= 0 ? '+' : ''}${fmtY(liNet)}（${liNet >= 0 ? '收益' : '投入'}）单独以折线呈现。`;
+      }
+      document.getElementById('insight-incomemix').textContent = '📈 收入结构解读：' + imTxt;
+
+      // 10. 工作日/周末解读
+      const wd = { n: 0, sum: 0 }, we = { n: 0, sum: 0 };
+      scope.filter(t => t.amount < 0 && t.category !== '理财').forEach(t => {
+        const d = new Date(t.date);
+        if (d.getDay() === 0 || d.getDay() === 6) { we.n++; we.sum += -t.amount; }
+        else { wd.n++; wd.sum += -t.amount; }
+      });
+      const wdAvg = wd.n ? wd.sum / wd.n : 0, weAvg = we.n ? we.sum / we.n : 0;
+      const wdPct = wdAvg > 0 ? ((weAvg - wdAvg) / wdAvg * 100) : 0;
+      document.getElementById('insight-workday').textContent =
+        `📅 解读：${s}工作日 ${wd.n} 笔 / 日均 ${fmtY(wdAvg)}，周末 ${we.n} 笔 / 日均 ${fmtY(weAvg)}，周末单笔平均${wdPct >= 0 ? '高' : '低'} ${Math.abs(wdPct).toFixed(0)}%。${wdPct > 0 ? '约会、聚餐、住宿集中在周末是主因。' : '周末消费反而更克制。'}`;
+    }
+
+    // ==================== 事件 ====================
+    function bindEvents() {
+      document.querySelectorAll('.year-btn[data-year]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.year-btn[data-year]').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          currentYear = btn.dataset.year;
+          render();
+        });
+      });
+      document.querySelectorAll('.month-btn[data-month]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.month-btn[data-month]').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          currentMonth = btn.dataset.month;
+          render();
+        });
+      });
+      document.querySelectorAll('.filter-btn[data-type]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.filter-btn[data-type]').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          currentType = btn.dataset.type;
+          render();
+        });
+      });
+      document.getElementById('search').addEventListener('input', e => {
+        searchKeyword = e.target.value.trim();
+        render();
+      });
+      // 金额/日期排序
+      document.getElementById('th-amount').addEventListener('click', () => {
+        if (sortBy === 'amount') { sortDir = -sortDir; } else { sortBy = 'amount'; sortDir = 1; }
+        render();
+      });
+      document.getElementById('th-date').addEventListener('click', () => {
+        if (sortBy === 'date') { sortDir = -sortDir; } else { sortBy = 'date'; sortDir = -1; }
+        render();
+      });
+      // 平铺/按月折叠切换
+      document.getElementById('view-flat').addEventListener('click', () => {
+        viewMode = 'flat';
+        document.getElementById('view-flat').classList.add('active');
+        document.getElementById('view-group').classList.remove('active');
+        render();
+      });
+      document.getElementById('view-group').addEventListener('click', () => {
+        viewMode = 'group';
+        document.getElementById('view-group').classList.add('active');
+        document.getElementById('view-flat').classList.remove('active');
+        render();
+      });
+      document.getElementById('btn-add').addEventListener('click', () => openModal());
+      document.getElementById('btn-cancel').addEventListener('click', closeModal);
+      document.getElementById('tx-form').addEventListener('submit', saveTx);
+      document.getElementById('btn-import').addEventListener('click', () => document.getElementById('file-input').click());
+      document.getElementById('file-input').addEventListener('change', importCSV);
+      document.getElementById('btn-export').addEventListener('click', exportCSV);
+      document.getElementById('btn-backup').addEventListener('click', backupJSON);
+      document.getElementById('btn-restore').addEventListener('click', () => document.getElementById('restore-input').click());
+      document.getElementById('restore-input').addEventListener('change', restoreJSON);
+    }
+
+    // ==================== JSON 备份 / 恢复 ====================
+    function backupJSON() {
+      const payload = {
+        version: 2,
+        exportedAt: new Date().toISOString(),
+        tx: allTx,
+        accounts: ACCOUNT_DATA,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = '记账备份_' + new Date().toISOString().split('T')[0] + '.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      alert('备份已导出（含全部交易 + 账户数据）\n建议定期备份, 防数据丢失。');
+    }
+
+    async function restoreJSON(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const text = await file.text();
+      try {
+        const data = JSON.parse(text);
+        const tx = Array.isArray(data.tx) ? data.tx : (Array.isArray(data) ? data : []);
+        if (!tx.length && !data.accounts) {
+          alert('备份文件格式不正确, 未导入任何数据');
+          e.target.value = '';
+          return;
+        }
+        if (!confirm(`将从备份恢复 ${tx.length} 条交易 + 账户数据。\n当前 ${allTx.length} 条数据将被替换, 确定继续?`)) {
+          e.target.value = '';
+          return;
+        }
+        allTx = tx;
+        if (data.accounts) {
+          ACCOUNT_DATA = data.accounts;
+          saveLocal();
+          renderAccounts();
+        }
+        saveLocal();
+        saveToDb();
+        render();
+        alert('恢复完成!');
+      } catch (err) {
+        alert('恢复失败: 文件不是有效的 JSON 备份 (' + err.message + ')');
+      }
+      e.target.value = '';
+    }
+
+    function openModal(tx) {
+      editingId = tx ? tx.id : null;
+      document.getElementById('modal-title').textContent = tx ? '编辑交易' : '新增交易';
+      const form = document.getElementById('tx-form');
+      if (tx) {
+        form.date.value = tx.date;
+        form.type.value = tx.type;
+        form.category.value = tx.category;
+        form.desc.value = tx.desc;
+        form.amount.value = Math.abs(tx.amount);
+      } else {
+        form.reset();
+        form.date.value = new Date().toISOString().split('T')[0].slice(0, 8) + '01';
+      }
+      document.getElementById('modal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('modal').classList.add('hidden');
+      editingId = null;
+    }
+
+    function saveTx(e) {
+      e.preventDefault();
+      const form = e.target;
+      const amount = parseFloat(form.amount.value);
+      const signed = form.type.value === '支出' ? -amount : amount;
+      const date = form.date.value;
+      const d = new Date(date);
+      const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+      const weekday = weekdays[d.getDay()];
+      const tx = {
+        id: editingId || ('tx_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)),
+        date, weekday,
+        type: form.type.value,
+        category: form.category.value.trim(),
+        desc: form.desc.value.trim(),
+        amount: signed,
+      };
+      if (editingId) {
+        const idx = allTx.findIndex(t => t.id === editingId);
+        if (idx >= 0) allTx[idx] = tx;
+      } else {
+        allTx.push(tx);
+      }
+      allTx.sort((a, b) => a.date.localeCompare(b.date));
+      saveLocal();
+      saveToDb();
+      closeModal();
+      render();
+    }
+
+    window.editTx = function (id) {
+      const tx = allTx.find(t => t.id === id);
+      if (tx) openModal(tx);
+    };
+
+    window.deleteTx = async function (id) {
+      if (!confirm('确定要删除这条交易吗?')) return;
+      allTx = allTx.filter(t => t.id !== id);
+      saveLocal();
+      await deleteFromDb(id);
+      render();
+    };
+
+    // ==================== 原生 CSV 工具 (替代 PapaParse, 零外链) ====================
+    function csvEscape(v) {
+      const s = String(v == null ? '' : v);
+      return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }
+
+    function toCSV(fields, rows) {
+      const lines = [fields.map(csvEscape).join(',')];
+      rows.forEach(r => lines.push(r.map(csvEscape).join(',')));
+      return '\ufeff' + lines.join('\r\n');
+    }
+
+    function parseCSV(text) {
+      // 去掉 BOM, 兼容 \r\n / \n
+      text = text.replace(/^\ufeff/, '').replace(/\r\n?/g, '\n');
+      const rows = [];
+      let field = '', row = [], inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (inQuotes) {
+          if (ch === '"') {
+            if (text[i + 1] === '"') { field += '"'; i++; }
+            else inQuotes = false;
+          } else field += ch;
+        } else if (ch === '"') {
+          inQuotes = true;
+        } else if (ch === ',') {
+          row.push(field); field = '';
+        } else if (ch === '\n') {
+          row.push(field); rows.push(row); row = []; field = '';
+        } else {
+          field += ch;
+        }
+      }
+      if (field.length || row.length) { row.push(field); rows.push(row); }
+      return rows.filter(r => r.some(c => c.trim() !== ''));
+    }
+
+    function exportCSV() {
+      // 按月份分组导出
+      const months = [...new Set(allTx.map(t => t.date.substring(0, 7)))].sort();
+      months.forEach(ym => {
+        const monthTx = allTx.filter(t => t.date.startsWith(ym));
+        const csv = toCSV(['日期', '星期', '类型', '分类', '描述', '金额'],
+          monthTx.map(t => [t.date, t.weekday, t.type, t.category, t.desc, t.amount]));
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${ym.replace('-', '')}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+      // 账户总览
+      const accRows = [
+          ...ACCOUNT_DATA.accounts.map(a => [a.name, a.type, a.amount, '']),
+          ...ACCOUNT_DATA.insurance.map(i => [i.name, '社保/公积金', i.amount, i.note]),
+        ];
+      if (ACCOUNT_DATA.loan) accRows.push(['住房贷款', '负债', ACCOUNT_DATA.loan.total, `${ACCOUNT_DATA.loan.years}年期`]);
+      const accCsv = toCSV(['账户名', '类型', '金额', '备注'], accRows);
+      const blob = new Blob([accCsv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = '账户总览.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    async function importCSV(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        let decoded = await file.text();
+        // 兼容 GBK 编码: 若出现替换符尝试 gb18030 解码
+        if (decoded.includes('\uFFFD')) {
+          try {
+            const buf = new Uint8Array(await file.arrayBuffer());
+            decoded = new TextDecoder('gb18030').decode(buf);
+          } catch (_) { /* 保持原样 */ }
+        }
+        const rows = parseCSV(decoded);
+        const header = rows[0].map(h => h.trim());
+        const di = header.indexOf('日期'), wi = header.indexOf('星期'),
+              ti = header.indexOf('类型'), ci = header.indexOf('分类'),
+              si = header.indexOf('描述'), ai = header.indexOf('金额');
+        if (di < 0 || si < 0 || ai < 0) {
+          alert('CSV 格式不正确: 需要包含 日期/描述/金额 列');
+          e.target.value = '';
+          return;
+        }
+        const newTx = rows.slice(1).map((r, i) => ({
+          id: 'imp_' + Date.now() + '_' + i,
+          date: (r[di] || '').trim(),
+          weekday: wi >= 0 ? (r[wi] || '').trim() : '',
+          type: ti >= 0 ? (r[ti] || '').trim() : '支出',
+          category: ci >= 0 ? (r[ci] || '').trim() : '其它',
+          desc: (r[si] || '').trim(),
+          amount: parseFloat(r[ai]) || 0,
+        })).filter(t => t.date && t.desc);
+        // 日期格式兼容 2026/8/21 → 2026-08-21
+        newTx.forEach(t => {
+          if (t.date && /^\d{4}\/\d{1,2}\/\d{1,2}$/.test(t.date)) {
+            const [y, m, d] = t.date.split('/');
+            t.date = `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+          }
+        });
+        if (confirm(`将导入 ${newTx.length} 条交易记录, 是否替换现有数据?\n点击"确定"替换, 点击"取消"追加。`)) {
+          allTx = newTx;
+        } else {
+          allTx = allTx.concat(newTx);
+          allTx.sort((a, b) => a.date.localeCompare(b.date));
+        }
+        saveLocal();
+        saveToDb();
+        render();
+        alert('导入完成!');
+      } catch (err) {
+        alert('导入失败: ' + err.message);
+      }
+      e.target.value = '';
+    }
+
+    init();
+  </script>
+</body>
+</html>
