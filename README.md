@@ -4,6 +4,8 @@ description: 记账截图识别与收支分析工作流。当用户提供手机�
 agent_created: true
 ---
 
+下载地址：https://skillhub.cn/skills/user_e285fd2e/bill-analysis
+
 # 记账截图识别与收支分析
 
 ## Overview
